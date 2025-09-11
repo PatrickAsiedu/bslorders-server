@@ -110,8 +110,8 @@ exports.register = async (req, res, next) => {
     const dateNow = new Date()
     const hashPass = await bcrypt.hash(req.body.password, 15)
     const [row] = await connection.query(
-      'INSERT INTO users (name, phone_number, password, type, created_at) VALUES ( ?, ?, ?,?, ?);',
-      [req.body.name, req.body.phone_number, hashPass, type, dateNow]
+      'INSERT INTO users (name, phone_number, password, type,status, created_at) VALUES ( ?, ?, ?,?, ?,?);',
+      [req.body.name, req.body.phone_number, hashPass, type, status,dateNow]
     )
     if (row.affectedRows === 1) {
       //success
