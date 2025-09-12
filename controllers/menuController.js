@@ -200,8 +200,24 @@ exports.getMenu = async (req, res, next) => {
 
     // get logged in user's id
     const userID = req.user.user?.id || req.user.chef?.id || req.user.admin?.id
-    const [checkOrrderQuery] = await connection.query(
-      'SELECT orders.id, food_id, food_name, drink_id, drink_name, comment, menu_id, orders.created_at, menu.menu_date, menu.expires_at FROM orders inner join menu on orders.menu_id = menu.id WHERE user_id = ? AND menu_date = ?',
+    const [checkOrderQuery] = await connection.query(
+      `
+      SELECT 
+        orders.id, 
+        orders.food_id, 
+        mf.food_name, 
+        orders.drink_id, 
+        md.drink_name, 
+        orders.comment, 
+        orders.menu_id, 
+        orders.created_at, 
+        menu.menu_date, 
+        menu.expires_at 
+      FROM orders 
+      INNER JOIN menu ON orders.menu_id = menu.id 
+      LEFT JOIN menu_food mf ON orders.food_id = mf.food_id AND mf.menu_id = orders.menu_id
+      LEFT JOIN menu_drink md ON orders.drink_id = md.drink_id AND md.menu_id = orders.menu_id
+      WHERE orders.user_id = ? AND menu.menu_date = ?`,
       [userID, menuDate.toISOString().split('T')[0]]
     )
 
@@ -214,7 +230,7 @@ exports.getMenu = async (req, res, next) => {
         created_by: foodQuery[0].created_by,
         menu_date: foodQuery[0].menu_date,
         expires_at: foodQuery[0].expires_at,
-        user_order: checkOrrderQuery,
+        user_order: checkOrderQuery,
       },
     })
   } catch (error) {
