@@ -104,11 +104,14 @@ CREATE TABLE `menu_drink` (
 CREATE TABLE `orders` (
   `id` int(11) NOT NULL,
   `food_id` int(11) NOT NULL,
+  `food_name` VARCHAR(255) NOT NULL,
   `drink_id` int(11) NOT NULL,
+  `drink_name` VARCHAR(255) NOT NULL,
   `menu_id` INT NOT NULL,
   `user_id` int(11) NOT NULL,
   `comment` text NOT NULL,
-  `created_at` date NOT NULL
+  `created_at` date NOT NULL,
+  `updated_at` date NOT NULL,
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
