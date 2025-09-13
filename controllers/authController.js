@@ -1,7 +1,7 @@
 // this controller handles login and register
 // and user hadnlers adduer, deleteUser, EditUSer, getUSer
 
-const connection = require('../config/dbconfig').promise()
+const pool = require('../config/dbconfig')
 const jwt = require('jsonwebtoken')
 const { handlerForAllErrors } = require('../utils/utils')
 const bcrypt = require('bcrypt')
@@ -12,13 +12,12 @@ exports.login = async (req, res, next) => {
   handlerForAllErrors(req, res)
 
   try {
-    const [result] = await connection.query(
-      'SELECT id, name, phone_number, password, type, status FROM users  WHERE phone_number = ? ;',
+    const result = await pool.query(
+      'SELECT id, name, phone_number, password, type, status FROM users  WHERE phone_number = $1',
       [req.body.phone_number]
     )
-
     //check if number exist numbers
-    if (result.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(401).json({
         message: 'Phone number entered is incorrect',
       })
@@ -26,7 +25,7 @@ exports.login = async (req, res, next) => {
 
     //phone number exist, check password
     // destructure to take out id and pass using ec6 rest format
-    const { id, password, ...restResult } = result[0]
+    const { id, password, ...restResult } = result.rows[0]
     //check password using bcrypt
     const passCheck = await bcrypt.compare(req.body.password, password)
 
@@ -91,11 +90,11 @@ exports.register = async (req, res, next) => {
 
   try {
     // check if phone number exists
-    const [result] = await connection.query(
-      'SELECT * FROM users WHERE phone_number = ? ',
+    const result = await pool.query(
+      'SELECT * FROM users WHERE phone_number = $1',
       [req.body.phone_number]
     )
-    if (result.length > 0) {
+    if (result.rows.length > 0) {
       return res.status(400).json({
         error: {
           message: `Phone number exists already`,
@@ -109,16 +108,11 @@ exports.register = async (req, res, next) => {
 
     const dateNow = new Date()
     const hashPass = await bcrypt.hash(req.body.password, 15)
-    const [row] = await connection.query(
-      'INSERT INTO users (name, phone_number, password, type,status, created_at) VALUES ( ?, ?, ?,?, ?,?);',
-      [req.body.name, req.body.phone_number, hashPass, type, status,dateNow]
+    const row = await pool.query(
+      'INSERT INTO users (name, phone_number, password, type, status, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [req.body.name, req.body.phone_number, hashPass, type, status, dateNow]
     )
-    if (row.affectedRows === 1) {
-      //success
-      const [result] = await connection.query(
-        'SELECT * FROM users WHERE phone_number = ? ',
-        [req.body.phone_number]
-      )
+    if (row.rows.length === 1) {
       return res.status(201).json({
         message: 'User registered successfuly, waiting for approval',
       })
@@ -147,15 +141,15 @@ exports.resetPassword = async (req, res, next) => {
     let [row] = []
 
     try {
-      ;[row] = await connection.query(
-        'UPDATE users SET password = ?, status = "ACTIVE" WHERE phone_number = ?',
-        [hashPass, req.body.phone_number]
+      row = await pool.query(
+        'UPDATE users SET password = $1, status = $2 WHERE phone_number = $3',
+        [hashPass, 'ACTIVE', req.body.phone_number]
       )
     } catch (error) {
       console.log(error)
     }
 
-    if (row.affectedRows === 1) {
+    if (row.rowCount === 1) {
       return res.status(201).json({
         message: 'Password reset successfully',
       })
@@ -184,12 +178,11 @@ exports.approveUser = async (req, res, next) => {
     }
 
     // query to approve user
-    const [row] = await connection.query(
-      'UPDATE users SET status = "ACTIVE" WHERE id = ?',
-      [req.body.user_id]
-    )
-
-    if (row.affectedRows === 1) {
+    const row = await pool.query('UPDATE users SET status = $1 WHERE id = $2', [
+      'ACTIVE',
+      req.body.user_id,
+    ])
+    if (row.rowCount === 1) {
       return res.status(200).json({
         message: 'User approved successfully',
       })
@@ -215,12 +208,11 @@ exports.deactivateUser = async (req, res, next) => {
     // only admin can access this
     authenticator.admin(req, res)
 
-    const [row] = await connection.query(
-      'UPDATE users SET status = "DISABLED" WHERE id = ?',
-      [user_id]
-    )
-
-    if (row.affectedRows === 1) {
+    const row = await pool.query('UPDATE users SET status = $1 WHERE id = $2', [
+      'DISABLED',
+      user_id,
+    ])
+    if (row.rowCount === 1) {
       return res.status(201).json({
         message: 'User blocked successfully',
       })
@@ -242,18 +234,17 @@ exports.forgotPassword = async (req, res, next) => {
 
   try {
     // check if phone number exists
-    const [result] = await connection.query(
-      'SELECT * FROM users WHERE phone_number = ? ',
+    const result = await pool.query(
+      'SELECT * FROM users WHERE phone_number = $1',
       [req.body.phone_number]
     )
-
-    if (result.length > 0) {
+    if (result.rows.length > 0) {
       //update the user's status to inactive
 
       try {
-        const [result] = await connection.query(
-          'UPDATE users set status = "RESET_REQUIRED" WHERE phone_number = ? ',
-          [req.body.phone_number]
+        await pool.query(
+          'UPDATE users set status = $1 WHERE phone_number = $2',
+          ['RESET_REQUIRED', req.body.phone_number]
         )
       } catch (error) {
         console.log(error)
@@ -288,16 +279,17 @@ exports.passwordResetRequests = async (req, res, next) => {
     let [row] = []
 
     try {
-      ;[row] = await connection.query(
-        'SELECT name, phone_number, status from users where status = "RESET_REQUIRED"'
+      row = await pool.query(
+        'SELECT name, phone_number, status from users where status = $1',
+        ['RESET_REQUIRED']
       )
     } catch (error) {
       console.log(error)
     }
 
-    if (row.length >= 1) {
+    if (row.rows.length >= 1) {
       return res.status(201).json({
-        reset_requests: row,
+        reset_requests: row.rows,
       })
     } else {
       return res.status(401).json({
@@ -309,96 +301,90 @@ exports.passwordResetRequests = async (req, res, next) => {
   }
 }
 
-
-
-exports.getAllAprovalRequest = async(req, res, next) =>{
-  handlerForAllErrors(req, res);
+exports.getAllAprovalRequest = async (req, res, next) => {
+  handlerForAllErrors(req, res)
   try {
     // only admin can do this
-    const { admin } = req.user;
-    if(!admin){
+    const { admin } = req.user
+    if (!admin) {
       return res.status(400).json({
-        message: "You need to log in as admin in order to get all request"
-      });
-    };
+        message: 'You need to log in as admin in order to get all request',
+      })
+    }
 
-    const [ userQuery ] = await connection.query(
-      'SELECT id, name, phone_number, type, created_at, status FROM users  WHERE status = ?', ['PENDING']
-    );
-
-    if(userQuery.length === 0){
+    const userQuery = await pool.query(
+      'SELECT id, name, phone_number, type, created_at, status FROM users  WHERE status = $1',
+      ['PENDING']
+    )
+    if (userQuery.rows.length === 0) {
       return res.status(400).json({
-        message: "No approval request available"
+        message: 'No approval request available',
       })
     }
 
     return res.status(200).json({
-      message: "Query successfull",
-      data: userQuery
+      message: 'Query successfull',
+      data: userQuery.rows,
     })
-    
-  } catch (error) {
-    next(error);
-  }
-};
-
-
-exports.getAllUsers = async(req, res, next)=>{
-  try {
-    // only admin can do this
-    const { admin, chef } = req.user;
-    if(!admin && !chef){
-      return res.status(400).json({
-        message: "You need to log in as admin  or chef in order to get all users"
-      });
-    };
-
-    // all clear, we can now get all users
-    const [usersQuery] = await connection.query('SELECT id, name, phone_number, type, status, created_at FROM users')
-    
-    if(usersQuery.length===0){
-      return res.status(400).json({
-        message: "No user found"
-      })
-    }
-
-
-    return res.status(200).json({
-      message: "Query successfull",
-      data: usersQuery
-    })
-
-    
   } catch (error) {
     next(error)
   }
-};
+}
 
-
-
-exports.denyApprovalRequest = async(req, res, next)=>{
-  handlerForAllErrors(req, res);
+exports.getAllUsers = async (req, res, next) => {
   try {
     // only admin can do this
-    const { admin} = req.user;
-    if(!admin){
+    const { admin, chef } = req.user
+    if (!admin && !chef) {
       return res.status(400).json({
-        message: "You need to log in as admin in order to deny this request"
-      });
-    };
+        message:
+          'You need to log in as admin  or chef in order to get all users',
+      })
+    }
 
-    const [ denyQuery ] = await connection.query("UPDATE users SET status = 'BLOCKED' WHERE id = ? ", [req.body.user_id]);
-
-    if(denyQuery.affectedRows === 0){
+    // all clear, we can now get all users
+    const usersQuery = await pool.query(
+      'SELECT id, name, phone_number, type, status, created_at FROM users'
+    )
+    if (usersQuery.rows.length === 0) {
       return res.status(400).json({
-        message: "Invalid user id passed"
+        message: 'No user found',
       })
     }
 
     return res.status(200).json({
-      message: "User's request denied successfully"
+      message: 'Query successfull',
+      data: usersQuery.rows,
     })
-    
+  } catch (error) {
+    next(error)
+  }
+}
+
+exports.denyApprovalRequest = async (req, res, next) => {
+  handlerForAllErrors(req, res)
+  try {
+    // only admin can do this
+    const { admin } = req.user
+    if (!admin) {
+      return res.status(400).json({
+        message: 'You need to log in as admin in order to deny this request',
+      })
+    }
+
+    const denyQuery = await pool.query(
+      'UPDATE users SET status = $1 WHERE id = $2',
+      ['BLOCKED', req.body.user_id]
+    )
+    if (denyQuery.rowCount === 0) {
+      return res.status(400).json({
+        message: 'Invalid user id passed',
+      })
+    }
+
+    return res.status(200).json({
+      message: "User's request denied successfully",
+    })
   } catch (error) {
     next(error)
   }

@@ -1,4 +1,4 @@
-const connection = require('../config/dbconfig').promise()
+const pool = require('../config/dbconfig')
 const { handlerForAllErrors } = require('../utils/utils')
 
 exports.addMenu = async (req, res, next) => {
@@ -37,11 +37,10 @@ exports.addMenu = async (req, res, next) => {
     }
 
     // check if menu has been added already for the menudate
-    const [result] = await connection.query(
-      'SELECT * FROM menu WHERE menu_date = ? ',
-      [req.body.menu_date]
-    )
-    if (result.length > 0) {
+    const result = await pool.query('SELECT * FROM menu WHERE menu_date = $1', [
+      req.body.menu_date,
+    ])
+    if (result.rows.length > 0) {
       return res.status(400).json({
         error: 'Failed to add menu',
         message:
@@ -61,14 +60,14 @@ exports.addMenu = async (req, res, next) => {
 
     const chefID = req.body.chef_id || req.user?.chef.name
     console.log('line 73: ', chefID)
-    const [menu_query] = await connection.query(
-      'INSERT INTO menu (menu_date, expires_at, created_by, created_at) values (?,?,?,?)',
+    const menu_query = await pool.query(
+      'INSERT INTO menu (menu_date, expires_at, created_by, created_at) values ($1,$2,$3,$4) RETURNING id',
       [req.body.menu_date, expires_at, chefID, currentDate]
     )
 
     // insert id =  query.insertId
     // check if query is successful
-    if ((menu_query.affectedRows = 0)) {
+    if (!menu_query.rows[0]?.id) {
       return res.status(400).json({
         message: 'Failed to add menu, please try again',
       })
@@ -80,34 +79,34 @@ exports.addMenu = async (req, res, next) => {
     // lets get corresponding names of all the food in an object
     const foods = []
     for (var food_id of req.body.foods_id) {
-      const [foodName] = await connection.query(
-        'SELECT id, name FROM food WHERE id = ? ',
+      const foodName = await pool.query(
+        'SELECT id, name FROM food WHERE id = $1',
         [food_id]
       )
-      foods.push(foodName[0])
+      foods.push(foodName.rows[0])
     }
     console.log(foods)
     for (var food of foods) {
-      const [result] = await connection.query(
-        'INSERT INTO menu_food (menu_id, food_id, food_name, created_at) values (?,?,?,?)',
-        [menu_query.insertId, food.id, food.name, new Date()]
+      await pool.query(
+        'INSERT INTO menu_food (menu_id, food_id, food_name, created_at) values ($1,$2,$3,$4)',
+        [menu_query.rows[0].id, food.id, food.name, new Date()]
       )
     }
 
     // lets get corresponding names of all the food in an object
     const drinks = []
     for (var drink_id of req.body.drinks_id) {
-      const [drinkName] = await connection.query(
-        'SELECT id, name FROM drink WHERE id = ? ',
+      const drinkName = await pool.query(
+        'SELECT id, name FROM drink WHERE id = $1',
         [drink_id]
       )
-      drinks.push(drinkName[0])
+      drinks.push(drinkName.rows[0])
     }
     console.log(drinks)
     for (var drink of drinks) {
-      const [result] = await connection.query(
-        'INSERT INTO menu_drink (menu_id, drink_id, drink_name, created_at) values (?,?,?,?)',
-        [menu_query.insertId, drink.id, drink.name, new Date()]
+      await pool.query(
+        'INSERT INTO menu_drink (menu_id, drink_id, drink_name, created_at) values ($1,$2,$3,$4)',
+        [menu_query.rows[0].id, drink.id, drink.name, new Date()]
       )
     }
 
@@ -157,13 +156,12 @@ exports.getMenu = async (req, res, next) => {
   // }
 
   try {
-    const [result] = await connection.query(
-      'SELECT * FROM menu where menu_date = ? AND status = "ACTIVE" ',
-      [menuDate.toISOString().split('T')[0]]
-      // menuDate.toISOString().split('T')[0]
+    const result = await pool.query(
+      'SELECT * FROM menu where menu_date = $1 AND status = $2',
+      [menuDate.toISOString().split('T')[0], 'ACTIVE']
     )
-    console.log(result)
-    if (result.length === 0) {
+    console.log(result.rows)
+    if (result.rows.length === 0) {
       return res.status(401).json({
         message: 'No menu found for specified date, please check and try again',
         date: menuDate.toISOString().split('T')[0],
@@ -171,25 +169,23 @@ exports.getMenu = async (req, res, next) => {
     }
 
     // foodquery
-    const [foodQuery] = await connection.query(
-      'select menu_id, food_id, food_name, created_by, menu_date, expires_at from menu_food  join menu on menu.id = menu_food.menu_id where menu.menu_date = ? ',
+    const foodQuery = await pool.query(
+      'select menu_id, food_id, food_name, created_by, menu_date, expires_at from menu_food  join menu on menu.id = menu_food.menu_id where menu.menu_date = $1',
       [menuDate.toISOString().split('T')[0]]
     )
+    console.log(foodQuery.rows)
 
-    console.log(foodQuery)
-
-    const foods = foodQuery.map((foodItem) => {
+    const foods = foodQuery.rows.map((foodItem) => {
       const { food_id, food_name } = { ...foodItem }
       return { food_id, food_name }
     })
 
     // drinkquery
-    const [drinkQuery] = await connection.query(
-      'select menu_id, drink_id, drink_name, created_by, menu_date from menu_drink inner join menu on menu.id = menu_drink.menu_id where menu_date = ? ',
+    const drinkQuery = await pool.query(
+      'select menu_id, drink_id, drink_name, created_by, menu_date from menu_drink inner join menu on menu.id = menu_drink.menu_id where menu_date = $1',
       [menuDate.toISOString().split('T')[0]]
     )
-
-    const drinks = drinkQuery.map((drinkItem) => {
+    const drinks = drinkQuery.rows.map((drinkItem) => {
       const { drink_id, drink_name } = { ...drinkItem }
       return { drink_id, drink_name }
     })
@@ -200,7 +196,7 @@ exports.getMenu = async (req, res, next) => {
 
     // get logged in user's id
     const userID = req.user.user?.id || req.user.chef?.id || req.user.admin?.id
-    const [checkOrderQuery] = await connection.query(
+    const checkOrderQuery = await pool.query(
       `
       SELECT 
         orders.id, 
@@ -217,20 +213,20 @@ exports.getMenu = async (req, res, next) => {
       INNER JOIN menu ON orders.menu_id = menu.id 
       LEFT JOIN menu_food mf ON orders.food_id = mf.food_id AND mf.menu_id = orders.menu_id
       LEFT JOIN menu_drink md ON orders.drink_id = md.drink_id AND md.menu_id = orders.menu_id
-      WHERE orders.user_id = ? AND menu.menu_date = ?`,
+      WHERE orders.user_id = $1 AND menu.menu_date = $2`,
       [userID, menuDate.toISOString().split('T')[0]]
     )
 
     return res.status(200).json({
       message: 'Query successful',
       data: {
-        menu_id: foodQuery[0].menu_id,
+        menu_id: foodQuery.rows[0]?.menu_id,
         foods,
         drinks,
-        created_by: foodQuery[0].created_by,
-        menu_date: foodQuery[0].menu_date,
-        expires_at: foodQuery[0].expires_at,
-        user_order: checkOrderQuery,
+        created_by: foodQuery.rows[0]?.created_by,
+        menu_date: foodQuery.rows[0]?.menu_date,
+        expires_at: foodQuery.rows[0]?.expires_at,
+        user_order: checkOrderQuery.rows,
       },
     })
   } catch (error) {
@@ -241,49 +237,44 @@ exports.getMenu = async (req, res, next) => {
 // get all menu from time immemorial
 exports.getAllMenu = async (req, res, next) => {
   try {
-    const [foodQuery] = await connection.query(
-      'SELECT menu_id, food_id, food_name, created_by, menu_date FROM menu_food INNER JOIN menu ON menu.id = menu_food.menu_id WHERE menu.status ="ACTIVE" '
+    const foodQuery = await pool.query(
+      'SELECT menu_id, food_id, food_name, created_by, menu_date FROM menu_food INNER JOIN menu ON menu.id = menu_food.menu_id WHERE menu.status = $1',
+      ['ACTIVE']
     )
-    const [drinkQuery] = await connection.query(
-      'SELECT menu_id, drink_id, drink_name, created_by, menu_date FROM menu_drink INNER JOIN menu ON menu.id = menu_drink.menu_id WHERE menu.status ="ACTIVE" '
+    const drinkQuery = await pool.query(
+      'SELECT menu_id, drink_id, drink_name, created_by, menu_date FROM menu_drink INNER JOIN menu ON menu.id = menu_drink.menu_id WHERE menu.status = $1',
+      ['ACTIVE']
     )
-
-    // console.log(foodQuery)
     console.log(
       '........................get all orders........................'
     )
     const menus = []
-
-    const unique_menu_ids = [...new Set(foodQuery.map((item) => item.menu_id))]
+    const unique_menu_ids = [
+      ...new Set(foodQuery.rows.map((item) => item.menu_id)),
+    ]
     for (var menu_id of unique_menu_ids) {
       const menu = {}
       menu.menu_id = menu_id
-      const individualFoodItems = foodQuery.filter(
+      const individualFoodItems = foodQuery.rows.filter(
         (fooditems) => fooditems.menu_id === menu_id
       )
       const foods = individualFoodItems.map((foodItem) => {
         const { food_id, food_name } = { ...foodItem }
         return { food_id, food_name }
       })
-
-      const individualDrinkItems = drinkQuery.filter(
+      const individualDrinkItems = drinkQuery.rows.filter(
         (drinkitems) => drinkitems.menu_id === menu_id
       )
       const drinks = individualDrinkItems.map((drinkItem) => {
         const { drink_id, drink_name } = { ...drinkItem }
         return { drink_id, drink_name }
       })
-
-      // set all items
       menu.foods = foods
       menu.drinks = drinks
-      menu.created_by = individualFoodItems[0].created_by
-      menu.menu_date = individualFoodItems[0].menu_date
+      menu.created_by = individualFoodItems[0]?.created_by
+      menu.menu_date = individualFoodItems[0]?.menu_date
       menus.push(menu)
     }
-
-    //  console.log(foodQuery)
-
     return res.status(200).json({
       message: 'Query successful',
       data: menus,
@@ -327,7 +318,7 @@ exports.editMenu = async (req, res, next) => {
     }
 
     // delete all instances in menu_food with the menu_id
-    await connection.query('DELETE from menu_food WHERE menu_id = ?', [
+    await pool.query('DELETE from menu_food WHERE menu_id = $1', [
       req.body.menu_id,
     ])
 
@@ -335,22 +326,22 @@ exports.editMenu = async (req, res, next) => {
     // lets get corresponding names of all the food in an object
     const foods = []
     for (var food_id of req.body.foods_id) {
-      const [foodName] = await connection.query(
-        'SELECT id, name FROM food WHERE id = ? ',
+      const foodName = await pool.query(
+        'SELECT id, name FROM food WHERE id = $1',
         [food_id]
       )
-      foods.push(foodName[0])
+      foods.push(foodName.rows[0])
     }
     console.log('updated foods:', foods)
     for (var food of foods) {
-      const [result] = await connection.query(
-        'INSERT INTO menu_food (menu_id, food_id, food_name, created_at) values (?,?,?,?)',
+      await pool.query(
+        'INSERT INTO menu_food (menu_id, food_id, food_name, created_at) values ($1,$2,$3,$4)',
         [req.body.menu_id, food.id, food.name, new Date()]
       )
     }
 
     // delete all instances in tbl_drink with the menu_id
-    await connection.query('DELETE from menu_drink WHERE menu_id = ?', [
+    await pool.query('DELETE from menu_drink WHERE menu_id = $1', [
       req.body.menu_id,
     ])
 
@@ -358,27 +349,26 @@ exports.editMenu = async (req, res, next) => {
     // lets get corresponding names of all the food in an object
     const drinks = []
     for (var drink_id of req.body.drinks_id) {
-      const [drinkName] = await connection.query(
-        'SELECT id, name FROM drink WHERE id = ? ',
+      const drinkName = await pool.query(
+        'SELECT id, name FROM drink WHERE id = $1',
         [drink_id]
       )
-      drinks.push(drinkName[0])
+      drinks.push(drinkName.rows[0])
     }
     console.log('updated drinks:', drinks)
     for (var drink of drinks) {
-      const [result] = await connection.query(
-        'INSERT INTO menu_drink (menu_id, drink_id, drink_name, created_at) values (?,?,?,?)',
+      await pool.query(
+        'INSERT INTO menu_drink (menu_id, drink_id, drink_name, created_at) values ($1,$2,$3,$4)',
         [req.body.menu_id, drink.id, drink.name, new Date()]
       )
     }
 
     // TODO: set  updated_at in menu to current date
     // ideally it should be the last task
-    const [menu_query] = await connection.query(
-      'UPDATE menu set updated_at = ? ',
-      [new Date()]
-    )
-    if (menu_query.affectedRows > 0) {
+    const menu_query = await pool.query('UPDATE menu set updated_at = $1', [
+      new Date(),
+    ])
+    if (menu_query.rowCount > 0) {
       return res.status(200).json({
         message: 'Menu updated successfully',
       })
@@ -410,21 +400,18 @@ exports.deleteMenu = async (req, res, next) => {
 
   try {
     // check if date hasnt  past, cos you cant delete future menus
-    const [menuQuery] = await connection.query(
-      'SELECT * FROM menu where id = ?',
-      [req.query.menu_id]
-    )
-
-    if (menuQuery.length === 0) {
+    const menuQuery = await pool.query('SELECT * FROM menu where id = $1', [
+      req.query.menu_id,
+    ])
+    if (menuQuery.rows.length === 0) {
       return res.status(400).json({
         message: 'No menu found for specified id',
       })
     }
 
-    console.log(menuQuery[0].menu_date)
-
+    console.log(menuQuery.rows[0].menu_date)
     const currentDate = new Date()
-    const menuDate = new Date(menuQuery[0].menu_date)
+    const menuDate = new Date(menuQuery.rows[0].menu_date)
     console.log(menuDate > currentDate)
     if (menuDate < currentDate) {
       return res.status(400).json({
@@ -441,16 +428,11 @@ exports.deleteMenu = async (req, res, next) => {
     //     currentDate
     // })
 
-    await connection.query('DELETE from menu where id = ? ', [
+    await pool.query('DELETE from menu where id = $1', [req.query.menu_id])
+    await pool.query('DELETE from menu_food WHERE menu_id = $1', [
       req.query.menu_id,
     ])
-    // delete all instances in menu_food with the menu_id
-    await connection.query('DELETE from menu_food WHERE menu_id = ?', [
-      req.query.menu_id,
-    ])
-
-    // delete all instances in tbl_drink with the menu_id
-    await connection.query('DELETE from menu_drink WHERE menu_id = ?', [
+    await pool.query('DELETE from menu_drink WHERE menu_id = $1', [
       req.query.menu_id,
     ])
 

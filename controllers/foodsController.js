@@ -1,4 +1,4 @@
-const connection = require('../config/dbconfig').promise()
+const pool = require('../config/dbconfig')
 const { handlerForAllErrors } = require('../utils/utils')
 const jwt = require('jsonwebtoken')
 
@@ -18,18 +18,17 @@ exports.addFood = async (req, res, next) => {
     // client returns an array of foods... map through and store in db with ids.
     var statusCode = 201
     var message = ''
-    req.body.foods.map(async (food) => {
-      const [row] = await connection.query(
-        'INSERT INTO food (name, created_at) VALUES (? , ?)',
+    for (const food of req.body.foods) {
+      const row = await pool.query(
+        'INSERT INTO food (name, created_at) VALUES ($1, $2) RETURNING id',
         [food, new Date()]
       )
-      if (row.affectedRows === 1) {
-        console.log('succes; item added succesfully')
+      if (row.rows.length === 1) {
+        console.log('success: item added successfully')
       } else {
-        console.log('faied: cant add item')
+        console.log('failed: cant add item')
       }
-    })
-
+    }
     return res.status(200).json({
       message: 'foods added successfully',
     })
@@ -39,13 +38,11 @@ exports.addFood = async (req, res, next) => {
 }
 
 exports.getFoods = async (req, res, next) => {
-
   try {
-    const [result] = await connection.query(
+    const result = await pool.query(
       "SELECT id, name, created_at from food  WHERE status = 'ACTIVE'"
     )
-
-    if (result.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(401).json({
         message: 'No food added, please add foods and try again',
       })
@@ -53,7 +50,7 @@ exports.getFoods = async (req, res, next) => {
 
     return res.status(200).json({
       message: 'Successfull',
-      foods: result,
+      foods: result.rows,
     })
   } catch (error) {
     next(error)
@@ -75,12 +72,11 @@ exports.deleteFood = async (req, res, next) => {
   }
 
   try {
-    const [row] = await connection.query(
-      'UPDATE food SET status = "DELETED" WHERE  id = ? ',
-      [req.body.food_id]
-    )
-
-    if (row.affectedRows === 1) {
+    const row = await pool.query('UPDATE food SET status = $1 WHERE id = $2', [
+      'DELETED',
+      req.body.food_id,
+    ])
+    if (row.rowCount === 1) {
       res.status(200).json({
         message: 'Food item deleted successfully',
       })
@@ -108,13 +104,11 @@ exports.editFood = async (req, res, next) => {
   }
 
   try {
-    const [row] = await connection.query(
-      'UPDATE food SET name = ?, updated_at = ? WHERE id = ?',
+    const row = await pool.query(
+      'UPDATE food SET name = $1, updated_at = $2 WHERE id = $3',
       [req.body.food_name, new Date(), req.body.food_id]
     )
-    // console.log(row)
-
-    if (row.affectedRows === 1) {
+    if (row.rowCount === 1) {
       res.status(200).json({
         message: 'Food updated successfully',
       })
