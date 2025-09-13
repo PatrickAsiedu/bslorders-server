@@ -1,7 +1,7 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
-// Create PostgreSQL connection pool
+
 const pool = new Pool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -12,6 +12,12 @@ const pool = new Pool({
     rejectUnauthorized: false
   }
 });
+
+
+// const pool = new Pool({
+//   connectionString: process.env.DB_URL,
+//   ssl: { rejectUnauthorized: false }, // Needed for most cloud Postgres providers
+// })
 
 pool.connect((err, client, release) => {
   if (err) {
