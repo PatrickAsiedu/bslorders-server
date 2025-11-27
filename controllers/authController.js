@@ -107,7 +107,7 @@ exports.register = async (req, res, next) => {
     const status = req.body.status !== undefined ? req.body.status : 'PENDING' //this is redundant
 
     const dateNow = new Date()
-    const hashPass = await bcrypt.hash(req.body.password, 15)
+    const hashPass = await bcrypt.hash(req.body.password, 10)
     const row = await pool.query(
       'INSERT INTO users (name, phone_number, password, type, status, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
       [req.body.name, req.body.phone_number, hashPass, type, status, dateNow]
@@ -136,7 +136,7 @@ exports.resetPassword = async (req, res, next) => {
       })
     }
 
-    const hashPass = await bcrypt.hash(req.body.password, 15)
+    const hashPass = await bcrypt.hash(req.body.password, 10)
 
     let [row] = []
 

@@ -1,6 +1,6 @@
 
 -- PostgreSQL compatible schema and data for bslorders
--- CORRECTED VERSION: Fixed DATE->TIMESTAMP mismatch, added CASCADE deletes, fixed constraints
+-- Fixed version: DATE -> TIMESTAMP, nullable comment, CASCADE deletes
 
 -- Table: drink
 CREATE TABLE drink (
@@ -40,7 +40,7 @@ CREATE TABLE menu (
 -- Table: menu_food
 CREATE TABLE menu_food (
     menu_id INTEGER NOT NULL REFERENCES menu(id) ON DELETE CASCADE,
-    food_id INTEGER NOT NULL REFERENCES food(id) ON DELETE RESTRICT,
+    food_id INTEGER NOT NULL REFERENCES food(id) ON DELETE CASCADE,
     food_name VARCHAR(255) NOT NULL,
     created_at TIMESTAMP NOT NULL
 );
@@ -48,23 +48,9 @@ CREATE TABLE menu_food (
 -- Table: menu_drink
 CREATE TABLE menu_drink (
     menu_id INTEGER NOT NULL REFERENCES menu(id) ON DELETE CASCADE,
-    drink_id INTEGER NOT NULL REFERENCES drink(id) ON DELETE RESTRICT,
+    drink_id INTEGER NOT NULL REFERENCES drink(id) ON DELETE CASCADE,
     drink_name VARCHAR(255) NOT NULL,
     created_at TIMESTAMP NOT NULL
-);
-
--- Table: orders
-CREATE TABLE orders (
-    id INTEGER PRIMARY KEY,
-    food_id INTEGER NOT NULL REFERENCES food(id) ON DELETE RESTRICT,
-    food_name VARCHAR(255) NOT NULL,
-    drink_id INTEGER NOT NULL REFERENCES drink(id) ON DELETE RESTRICT,
-    drink_name VARCHAR(255) NOT NULL,
-    menu_id INTEGER NOT NULL REFERENCES menu(id) ON DELETE CASCADE,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    comment TEXT,
-    created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP
 );
 
 -- Table: users
@@ -75,14 +61,28 @@ CREATE TABLE users (
     password TEXT NOT NULL,
     type TEXT NOT NULL,
     status TEXT NOT NULL,
-    created_at TIMESTAMP NOT NULL
+    created_at DATE NOT NULL
 );
 
 INSERT INTO users (id, name, phone_number, password, type, status, created_at) VALUES
-(1, 'John Mensah', '0500000000', '$2a$12$90MbFBgHvt/HR6Wgx7u51eDNbAh8bZnfCTZD7YJFo61hbqVrlmdUS', 'admin','ACTIVE', '2022-02-21 16:03:02'),
-(2, 'Joel the Cheff', '0200000000', '$2a$12$T2SILsCdjJuH1Gf4QJ5LmeVLJsD5/i3o4Z1aVBvPj2S.H7EF02nHS', 'chef','ACTIVE', '2022-02-21 16:03:02');
+(1, 'John Mensah', '0500000000', '$2a$12$90MbFBgHvt/HR6Wgx7u51eDNbAh8bZnfCTZD7YJFo61hbqVrlmdUS', 'admin','ACTIVE', '2022-02-21'),
+(2, 'Joel the Cheff', '0200000000', '$2a$12$T2SILsCdjJuH1Gf4QJ5LmeVLJsD5/i3o4Z1aVBvPj2S.H7EF02nHS', 'chef','ACTIVE', '2022-02-21');
 
--- Indexes for performance optimization
+-- Table: orders
+CREATE TABLE orders (
+    id INTEGER PRIMARY KEY,
+    food_id INTEGER NOT NULL REFERENCES food(id) ON DELETE RESTRICT,
+    food_name VARCHAR(255) NOT NULL,
+    drink_id INTEGER NOT NULL REFERENCES drink(id) ON DELETE RESTRICT,
+    drink_name VARCHAR(255) NOT NULL,
+    menu_id INTEGER NOT NULL REFERENCES menu(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    comment TEXT,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP
+);
+
+-- Indexes for performance
 CREATE INDEX idx_menu_food_menu_id ON menu_food(menu_id);
 CREATE INDEX idx_menu_food_food_id ON menu_food(food_id);
 CREATE INDEX idx_menu_drink_menu_id ON menu_drink(menu_id);
@@ -91,9 +91,9 @@ CREATE INDEX idx_orders_menu_id ON orders(menu_id);
 CREATE INDEX idx_orders_user_id ON orders(user_id);
 CREATE INDEX idx_orders_food_id ON orders(food_id);
 CREATE INDEX idx_orders_drink_id ON orders(drink_id);
-CREATE INDEX idx_users_phone ON users(phone_number);
+CREATE INDEX idx_users_phone_number ON users(phone_number);
 
--- Sequences for auto-increment (with COALESCE fallback for empty tables)
+-- Sequences for auto-increment
 CREATE SEQUENCE IF NOT EXISTS drink_id_seq OWNED BY drink.id;
 SELECT setval('drink_id_seq', COALESCE((SELECT MAX(id) FROM drink), 1));
 ALTER TABLE drink ALTER COLUMN id SET DEFAULT nextval('drink_id_seq');
